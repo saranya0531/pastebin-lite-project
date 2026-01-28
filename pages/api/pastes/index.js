@@ -1,51 +1,60 @@
-import { nanoid } from "nanoid";
-import { getRedis } from "../../../lib/redis";
+// pages/index.js
+import { useState, useEffect } from "react";
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+export default function Home() {
+  const [pastes, setPastes] = useState([]);
+  const [text, setText] = useState("");
 
-  const { content, ttl_seconds, max_views } = req.body;
+  // Fetch all pastes
+  const fetchPastes = async () => {
+    const res = await fetch("/api/savePaste");
+    const data = await res.json();
+    if (data.pastes) setPastes(data.pastes);
+  };
 
-  // ✅ Validation (IMPORTANT)
-  if (!content || typeof content !== "string") {
-    return res.status(400).json({ error: "content is required" });
-  }
+  useEffect(() => {
+    fetchPastes();
+  }, []);
 
-  if (ttl_seconds !== undefined && ttl_seconds < 1) {
-    return res.status(400).json({ error: "ttl_seconds must be >= 1" });
-  }
+  const handleSave = async () => {
+    if (!text) return alert("Type something!");
+    const id = "paste-" + Date.now();
 
-  if (max_views !== undefined && max_views < 1) {
-    return res.status(400).json({ error: "max_views must be >= 1" });
-  }
+    await fetch("/api/savePaste", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, content: text }),
+    });
 
-  try {
-    const redis = await getRedis();
-    const id = nanoid(8);
+    setText("");
+    fetchPastes(); // refresh list
+  };
 
-    const now = Date.now();
-    const expires_at = ttl_seconds ? now + ttl_seconds * 1000 : null;
+  return (
+    <div style={{ maxWidth: 600, margin: "50px auto", fontFamily: "Arial" }}>
+      <h1>Pastebin Lite</h1>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={5}
+        style={{ width: "100%", padding: 10 }}
+        placeholder="Type your paste here..."
+      />
+      <button
+        onClick={handleSave}
+        style={{ marginTop: 10, padding: "10px 20px" }}
+      >
+        Save Paste
+      </button>
 
-    const data = {
-      content,
-      remaining_views: max_views ?? null,
-      expires_at,
-    };
-
-    const key = `paste:${id}`;
-
-    if (ttl_seconds) {
-      await redis.set(key, JSON.stringify(data), {
-        EX: ttl_seconds,
-      });
-    } else {
-      await redis.set(key, JSON.stringify(data));
-    }
-
-    return res.status(201).json({ id });
-  } catch (err) {
-    return res.status(500).json({ error: "Failed to create paste" });
-  }
+      <h2>Saved Pastes</h2>
+      <ul>
+        {pastes.map((paste) => (
+          <li key={paste.id} style={{ marginBottom: 10 }}>
+            <strong>{paste.id}</strong>: {paste.content}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
